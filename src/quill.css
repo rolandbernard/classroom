@@ -1,0 +1,12 @@
+
+.ql-container {
+    overflow-y: auto;
+    font-size: 1rem;
+    font-family: "Roboto", "Helvetica", "Arial", sans-serif;
+    flex: 1 1 auto;
+}
+
+.ql-toolbar {
+    flex: 0 0 auto;
+}
+
