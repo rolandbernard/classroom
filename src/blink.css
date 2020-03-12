@@ -1,0 +1,22 @@
+
+@keyframes blinking_yellow {
+    0%{
+        background-color: #FFEE58FF;
+    }
+    100%{
+        background-color: #FFEE5800;
+    }
+}
+
+@keyframes blinking_blue {
+    0%{
+        background-color: #4FC3F7FF;
+    }
+    50%{
+        background-color: #4FC3F790;
+    }
+    100%{
+        background-color: #4FC3F7FF;
+    }
+}
+

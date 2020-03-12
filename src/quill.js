@@ -51,6 +51,28 @@ class QuillComponent extends React.Component {
             },
             theme: 'snow',
         });
+        const { onChange } = this.props;
+        this.quill.on('text-change', onChange);
+    }
+
+    setContent(delta) {
+        this.quill.setContents(delta);
+    }
+
+    updateContent(delta) {
+        this.quill.updateContents(delta);
+    }
+
+    getContent() {
+        return this.quill.getContents();
+    }
+
+    enable(enabled) {
+        this.quill.enable(enabled);
+    }
+
+    shouldComponentUpdate() {
+        return false;
     }
 
     render() {

@@ -2,6 +2,7 @@
 import React, { createRef } from 'react';
 import {  Route, Switch, withRouter, matchPath } from 'react-router-dom';
 import { Button, TextField, AppBar, Paper, Divider, IconButton } from '@material-ui/core';
+import { grey } from '@material-ui/core/colors';
 import FileCopyIcon from '@material-ui/icons/FileCopy';
 import { v4 as uuid } from 'uuid';
 import io from 'socket.io-client';
@@ -36,12 +37,12 @@ const styles = {
         display: 'inline-block',
         verticalAlign: 'middle',
         userSelect: 'all',
-        color: 'lightgrey',
+        color: grey[400],
     },
     copy_button: {
         display: 'inline-block',
         verticalAlign: 'middle',
-        color: 'lightgrey',
+        color: grey[400],
     },
     app_bar: {
         whiteSpace: 'nowrap',
@@ -88,11 +89,10 @@ class App extends React.Component {
         this.new_room_text_field_ref = createRef();
         this.join_id_text_field_ref = createRef();
         this.join_name_text_field_ref = createRef();
-        this.socket = io('http://localhost:8080');
+        this.socket = io('http://192.168.1.114:8080');
 
         this.handleCreateNewRoom = this.handleCreateNewRoom.bind(this);
         this.handleJoinRoom = this.handleJoinRoom.bind(this);
-        this.handleCopyId = this.handleCopyId.bind(this);
     }
 
     handleCreateNewRoom() {
@@ -117,9 +117,11 @@ class App extends React.Component {
         if(name.length > 2) {
             const onNotFound = () => {
                 this.socket.removeListener('not_found', onNotFound);
+                this.socket.removeListener('found', onFound);
                 this.setState({ join_id_error: true, join_error_msg: "Room not found" });
             }
             const onFound = () => {
+                this.socket.removeListener('not_found', onNotFound);
                 this.socket.removeListener('found', onFound);
                 this.props.history.push(`listener/${room_id}/${name}`);
             }
