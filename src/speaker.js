@@ -5,6 +5,8 @@ import { Button, List, ListItem, Divider, IconButton} from '@material-ui/core';
 import { yellow, lightBlue } from '@material-ui/core/colors';
 import MicIcon from '@material-ui/icons/Mic';
 import MicOffIcon from '@material-ui/icons/MicOff';
+import EditIcon from '@material-ui/icons/Edit';
+import LinkOffIcon from '@material-ui/icons/LinkOff';
 import BlockIcon from '@material-ui/icons/Block';
 import 'webrtc-adapter';
 
@@ -81,6 +83,9 @@ const styles = {
         borderRadius: '0.2rem',
         animation: 'blinking_yellow 0.75s infinite',
     },
+    room_name: {
+        fontSize: '1.5rem',
+    },
 };
 
 class Speaker extends React.Component {
@@ -93,25 +98,48 @@ class Speaker extends React.Component {
         this.data_channels = { };
         this.state = {
             speaking: null,
+            room_name: null,
             listeners: { },
         };
+        this.second_sender = { };
         this.quill = createRef();
-        this.audio = createRef();
+        this.room_name = null;
+        this.audio = new Audio();
 
         this.handleLeave = this.handleLeave.bind(this);
         this.handleQuillChange = this.handleQuillChange.bind(this);
     }
 
     async handleMuteChange(listener) {
-        this.audio.current.srcObject = null;
+        if(this.state.speaking) {
+            this.audio.srcObject = null;
+            this.data_channels[this.state.speaking].send(JSON.stringify({
+                type: 'stop_speaking',
+            }));
+            for(let rtc in this.rtcs) {
+                if(rtc !== this.state.speaking) {
+                    this.rtcs[rtc].removeTrack(this.second_sender[rtc]);
+                }
+            }
+        }
         if(this.state.speaking === listener.id) {
             this.setState({
                 speaking: null,
             });
         } else {
             if(this.remote_audio[listener.id]) {
-                this.audio.current.srcObject = this.remote_audio[listener.id];
-                this.audio.current.play();
+                const media_stream = new MediaStream();
+                media_stream.addTrack(this.remote_audio[listener.id]);
+                this.audio.srcObject = media_stream ;
+                this.audio.play();
+                this.data_channels[listener.id].send(JSON.stringify({
+                    type: 'start_speaking',
+                }));
+                for(let rtc in this.rtcs) {
+                    if(rtc !== listener.id) {
+                        this.second_sender[rtc] = this.rtcs[rtc].addTrack(this.remote_audio[listener.id]);
+                    }
+                }
                 const new_listeners = { ...this.state.listeners };
                 new_listeners[listener.id].asking = false;
                 this.setState({
@@ -163,12 +191,16 @@ class Speaker extends React.Component {
             const whiteboard_mem = localStorage.getItem('whiteboard' + this.props.match.params.id);
             this.quill.current.setContent(JSON.parse(whiteboard_mem));
         } catch(e) {}
-
+        this.socket.on('room_info', data => {
+            this.setState({
+                room_name: data.name,
+            });
+        });
         this.socket.on('kick', this.handleLeave);
         this.socket.on('session', async data => {
             if(this.rtcs[data.sender_id]) {
                 const session_desc = new RTCSessionDescription(data.session);
-                await this.rtcs[data.sender_id].setRemoteDescription(data.session);
+                await this.rtcs[data.sender_id].setRemoteDescription(session_desc);
             }
         });
         this.socket.on('candidate', data => {
@@ -203,22 +235,40 @@ class Speaker extends React.Component {
                 }
             };
 
-            for(let track of this.local_audio.getTracks()) {
-                peer_connection.addTrack(track, this.local_audio);
-            }
+            peer_connection.addTrack(this.local_audio.getTracks()[0]);
             peer_connection.ontrack = event => {
-                this.remote_audio[listener.id] = event.streams[0];
+                this.remote_audio[listener.id] = event.track;
                 const new_listeners = { ...this.state.listeners };
                 new_listeners[listener.id].has_auido = true;
                 this.setState({
                     listeners: new_listeners,
                 });
             };
+            peer_connection.onnegotiationneeded = async event => {
+                const session_desc = await peer_connection.createOffer();
+                await peer_connection.setLocalDescription(session_desc);
+                this.socket.emit('session', { receiver_id: listener.id, session: session_desc });
+            };
 
             const data_channel = peer_connection.createDataChannel('data');
             this.data_channels[listener.id] = data_channel;
             data_channel.onmessage = event => {
                 const data = JSON.parse(event.data);
+                if(data.type === 'whiteboard_update' && listener.id === this.state.speaking) {
+                    this.quill.current.updateContent(data.data);
+                } else if(data.type === 'start_asking') {
+                    const new_listeners = { ...this.state.listeners };
+                    new_listeners[listener.id].asking = true;
+                    this.setState({
+                        listeners: new_listeners,
+                    });
+                } else if(data.type === 'stop_asking') {
+                    const new_listeners = { ...this.state.listeners };
+                    new_listeners[listener.id].asking = false;
+                    this.setState({
+                        listeners: new_listeners,
+                    });
+                }
             };
             data_channel.onopen = () => {
                 data_channel.send(JSON.stringify({
@@ -231,10 +281,6 @@ class Speaker extends React.Component {
                 }));
             }
 
-            const session_desc = await peer_connection.createOffer();
-            await peer_connection.setLocalDescription(session_desc);
-            this.socket.emit('session', { receiver_id: listener.id, session: session_desc });
-
             const new_listeners = { ...this.state.listeners };
             new_listeners[listener.id] = listener;
             this.setState({
@@ -246,6 +292,14 @@ class Speaker extends React.Component {
                 this.local_audio = stream;
                 this.socket.emit('start', { room_id: this.props.match.params.id, key: this.props.match.params.key });
             }).catch(() => {
+                alert("You chose not to provide access to the microphone, the application will not work.");
+                this.handleLeave();
+            });
+        } else if(navigator.getUserMedia) {
+            navigator.getUserMedia({ audio: true }, stream => {
+                this.local_audio = stream;
+                this.socket.emit('start', { room_id: this.props.match.params.id, key: this.props.match.params.key });
+            }, () => {
                 alert("You chose not to provide access to the microphone, the application will not work.");
                 this.handleLeave();
             });
@@ -266,11 +320,11 @@ class Speaker extends React.Component {
         }
     }
 
-    handleQuillChange(delta) {
+    handleQuillChange(delta, __, source) {
         localStorage.setItem('whiteboard' + this.props.match.params.id, JSON.stringify(this.quill.current.getContent()));
-        for(let channel of Object.values(this.data_channels)) {
-            if(channel.readyState === 'open') {
-                channel.send(JSON.stringify({
+        for(let id in this.data_channels) {
+            if(this.data_channels[id].readyState === 'open' && (source === 'user' || id !== this.state.speaking)) {
+                this.data_channels[id].send(JSON.stringify({
                     type: 'whiteboard_update',
                     data: delta,
                 }));
@@ -281,9 +335,9 @@ class Speaker extends React.Component {
     render() {
         return (
             <div style={styles.root}>
-                <audio ref={this.audio}/>
                 <div style={styles.listeners}>
                     <div style={styles.head}>
+                        <div style={styles.room_name}>{ this.state.room_name }</div>
                         <div>Listeners:</div>
                         <Divider/>
                     </div>
@@ -298,9 +352,14 @@ class Speaker extends React.Component {
                                 } key={listener.id}>
                                 <span style={styles.listener_name}>{listener.name}</span>
                                 <div style={styles.listener_buttons}>
-                                    {listener.has_auido && (<IconButton onClick={() => this.handleMuteChange(listener)} size="small">
-                                        { this.state.speaking !== listener.id ? (<MicIcon/>) : (<MicOffIcon/>) }
-                                    </IconButton>)}
+                                    {listener.has_auido
+                                        ? (<IconButton onClick={() => this.handleMuteChange(listener)} size="small">
+                                                { this.state.speaking !== listener.id ? (<MicIcon/>) : (<MicOffIcon/>) }
+                                            </IconButton>)
+                                        : (<IconButton onClick={() => this.handleMuteChange(listener)} size="small">
+                                                { this.state.speaking !== listener.id ? (<EditIcon/>) : (<LinkOffIcon/>) }
+                                            </IconButton>)
+                                    }
                                     <IconButton onClick={() => this.handleKick(listener)} size="small">
                                         <BlockIcon/>
                                     </IconButton>

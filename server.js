@@ -9,6 +9,12 @@ const app = express()
 app.get('/', (__, res) => {
     res.sendFile(path.join(__dirname, './build/index.html'));
 });
+app.use('/speaker/', (__, res) => {
+    res.sendFile(path.join(__dirname, './build/index.html'));
+});
+app.use('/listener/', (__, res) => {
+    res.sendFile(path.join(__dirname, './build/index.html'));
+});
 app.use("/", express.static(path.join(__dirname, "./build/"), { /*cacheControl: true , maxAge: 3600000*/ }));
 
 const server = http.createServer(app)
@@ -32,10 +38,16 @@ io.on('connection', socket => {
         }
         rooms[room_id] = room;
         socket.emit('created', { room_id: room_id });
+        const rooms_array = Object.values(rooms);
+        if(rooms_array.length > config.max_rooms) {
+            const oldest_room = rooms_array.reduce((a, b) => a.last_access > b.last_access ? a : b);
+            delete rooms[oldest_room.id];
+        }
     });
     socket.on('find', data => {
         if(rooms[data.room_id]) {
             socket.emit('found');
+            rooms[data.room_id].last_access = (new Date()).getTime();
         } else {
             socket.emit('not_found');
         }
@@ -56,6 +68,7 @@ io.on('connection', socket => {
             };
             rooms[data.room_id].listeners[socket.id] = connections[socket.id];
             rooms[data.room_id].last_access = (new Date()).getTime();
+            socket.emit('room_info', { room_id: data.room_id, name: rooms[data.room_id].name });
         } else {
             socket.emit('kick');
         }
@@ -67,9 +80,11 @@ io.on('connection', socket => {
                 socket: socket,
                 id: socket.id,
             };
+            socket.emit('room_info', { room_id: data.room_id, name: rooms[data.room_id].name });
             rooms[data.room_id].speaker = connections[socket.id];
+            rooms[data.room_id].last_access = (new Date()).getTime();
             for(let listener of Object.values(rooms[data.room_id].listeners)) {
-                rooms[data.room_id].speaker.socket.emit('join', {
+                socket.emit('join', {
                     name: listener.name,
                     listener_id: listener.id,
                 });
@@ -81,6 +96,7 @@ io.on('connection', socket => {
     socket.on('kick', data => {
         if(connections[socket.id]) {
             const room = connections[socket.id].room;
+            room.last_access = (new Date()).getTime();
             if(room.speaker === connections[socket.id]) {
                 if(room.listeners[data.listener_id]) {
                     room.speaker.socket.emit('leave', { listener_id: data.listener_id });
@@ -94,6 +110,7 @@ io.on('connection', socket => {
     const handleLeave = () => {
         if(connections[socket.id]) {
             const room = connections[socket.id].room;
+            room.last_access = (new Date()).getTime();
             if(room.speaker === connections[socket.id]) {
                 room.speaker = null;
                 delete connections[socket.id];
@@ -110,6 +127,7 @@ io.on('connection', socket => {
     socket.on('disconnect', handleLeave);
     socket.on('session', data => {
         if(connections[socket.id] && connections[data.receiver_id]) {
+            connections[socket.id].room.last_access = (new Date()).getTime();
             connections[data.receiver_id].socket.emit('session', {
                 sender_id: socket.id,
                 session: data.session,
@@ -118,6 +136,7 @@ io.on('connection', socket => {
     });
     socket.on('candidate', data => {
         if(connections[socket.id] && connections[data.receiver_id]) {
+            connections[socket.id].room.last_access = (new Date()).getTime();
             connections[data.receiver_id].socket.emit('candidate', {
                 sender_id: socket.id,
                 candidate: data.candidate,

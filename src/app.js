@@ -89,7 +89,7 @@ class App extends React.Component {
         this.new_room_text_field_ref = createRef();
         this.join_id_text_field_ref = createRef();
         this.join_name_text_field_ref = createRef();
-        this.socket = io('http://192.168.1.114:8080');
+        this.socket = io(props.location.origin);
 
         this.handleCreateNewRoom = this.handleCreateNewRoom.bind(this);
         this.handleJoinRoom = this.handleJoinRoom.bind(this);
