@@ -31,6 +31,7 @@ const styles = {
         flexFlow: 'column',
     },
     listener: {
+        flex: '0 0 auto',
         height: '2.75rem',
         padding: '0.5rem',
         display: 'flex',

@@ -34,6 +34,7 @@ const styles = {
         flexFlow: 'column',
     },
     listener: {
+        flex: '0 0 auto',
         height: '2.75rem',
         padding: '0.5rem',
         display: 'flex',
@@ -140,6 +141,16 @@ class Speaker extends React.Component {
                         this.second_sender[rtc] = this.rtcs[rtc].addTrack(this.remote_audio[listener.id]);
                     }
                 }
+                const new_listeners = { ...this.state.listeners };
+                new_listeners[listener.id].asking = false;
+                this.setState({
+                    speaking: listener.id,
+                    listeners: new_listeners,
+                });
+            } else {
+                this.data_channels[listener.id].send(JSON.stringify({
+                    type: 'start_speaking',
+                }));
                 const new_listeners = { ...this.state.listeners };
                 new_listeners[listener.id].asking = false;
                 this.setState({
